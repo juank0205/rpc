@@ -1,5 +1,6 @@
 #include <csignal>
 #include <cstddef>
+#include <cstring>
 #include <httpServer/httpServer.hpp>
 #include <iostream>
 #include <netdb.h>
@@ -40,29 +41,29 @@ void printHttpRequest(struct httpRequest &request) {
 
 TcpServer *TcpServer::instance = nullptr;
 
-TcpServer::TcpServer() : socketFd(), incommingMessage(), hints() {
+TcpServer::TcpServer() : m_socketFd(), m_incommingMessage(), m_hints() {
   TcpServer::instance = this;
   signal(SIGINT, handleSignal);
 
-  hints.ai_family = AF_INET;
-  hints.ai_socktype = SOCK_STREAM;
-  hints.ai_flags = AI_PASSIVE;
+  m_hints.ai_family = AF_INET;
+  m_hints.ai_socktype = SOCK_STREAM;
+  m_hints.ai_flags = AI_PASSIVE;
 
-  if (getaddrinfo(NULL, "5002", &hints, &res)) {
+  if (getaddrinfo(NULL, "5002", &m_hints, &m_res)) {
     exitWithFailure("getaddrinfo failed");
   }
 
-  socketFd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-  if (socketFd < 0) {
+  m_socketFd = socket(m_res->ai_family, m_res->ai_socktype, m_res->ai_protocol);
+  if (m_socketFd < 0) {
     exitWithFailure("failed to create socket");
   }
 
   int opt = 1;
-  if (setsockopt(socketFd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
+  if (setsockopt(m_socketFd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
     exitWithFailure("failed to create socket");
   }
 
-  if (bind(socketFd, res->ai_addr, res->ai_addrlen)) {
+  if (bind(m_socketFd, m_res->ai_addr, m_res->ai_addrlen)) {
     exitWithFailure("failed to bind");
   }
 }
@@ -85,27 +86,27 @@ void TcpServer::handleSignal(int sigint) {
 void TcpServer::handleSignalImpl(int sigint) { closeServer(); }
 
 void TcpServer::closeServer() {
-  if (socketFd > 0) {
-    close(socketFd);
-    socketFd = -1;
+  if (m_socketFd > 0) {
+    close(m_socketFd);
+    m_socketFd = -1;
   }
 
-  if (newSocketFd > 0) {
-    close(newSocketFd);
-    newSocketFd = -1;
+  if (m_newSocketFd > 0) {
+    close(m_newSocketFd);
+    m_newSocketFd = -1;
   }
 
-  if (res) {
-    freeaddrinfo(res);
-    res = nullptr;
+  if (m_res) {
+    freeaddrinfo(m_res);
+    m_res = nullptr;
     std::cout << "Server closed successfully." << std::endl;
   }
 }
 
 void TcpServer::printListeningAddress() {
   char host[NI_MAXHOST], service[NI_MAXSERV];
-  if (getnameinfo(res->ai_addr, res->ai_addrlen, host, sizeof(host), service,
-                  sizeof(service), NI_NUMERICHOST | NI_NUMERICSERV))
+  if (getnameinfo(m_res->ai_addr, m_res->ai_addrlen, host, sizeof(host),
+                  service, sizeof(service), NI_NUMERICHOST | NI_NUMERICSERV))
     return;
 
   std::ostringstream ss;
@@ -115,7 +116,7 @@ void TcpServer::printListeningAddress() {
 }
 
 void TcpServer::startListen() {
-  if (listen(socketFd, 20) < 0) {
+  if (listen(m_socketFd, 20) < 0) {
     exitWithFailure("Socket listen failed");
   }
 
@@ -128,22 +129,28 @@ void TcpServer::startListen() {
 
   while (true) {
     log("Waiting for new connection");
-    newSocketFd = accept(socketFd, (struct sockaddr *)&incAddr, &incAddrsize);
+    m_newSocketFd =
+        accept(m_socketFd, (struct sockaddr *)&incAddr, &incAddrsize);
 
-    bytesReceived = recv(newSocketFd, buffer, BUFFER_SIZE, 0);
+    memset(buffer, 0, sizeof(buffer));
+    bytesReceived = recv(m_newSocketFd, buffer, BUFFER_SIZE, 0);
     if (bytesReceived < 0) {
       exitWithFailure("Failed to receive data");
     }
 
     auto request = parseHttpResquest(std::string(buffer));
     printHttpRequest(request);
+    m_routesHanlder.executeRoute(request);
 
-    close(newSocketFd);
+    const std::string responseBody = m_routesHanlder.getResponse();
+    sendResponse(responseBody);
+
+    close(m_newSocketFd);
   }
 }
 
 struct httpRequest TcpServer::parseHttpResquest(std::string request) {
-  struct httpRequest parsedResponse;
+  struct httpRequest parsedResponse {};
   std::istringstream responseStream(request);
 
   std::string line;
@@ -170,19 +177,19 @@ struct httpRequest TcpServer::parseHttpResquest(std::string request) {
   return parsedResponse;
 }
 
-void TcpServer::sendResponse(struct httpResponse response) {
+void TcpServer::sendResponse(std::string body) {
   long bytesSent;
   std::string message;
   std::ostringstream ss;
 
   ss << "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: ";
 
-  ss << std::to_string(response.content->size()) << "\r\n\r\n"
-     << response.content->c_str();
-  bytesSent = write(newSocketFd, ss.str().c_str(), ss.str().size());
+  ss << std::to_string(body.size()) << "\r\n\r\n" << body;
+
+  bytesSent = write(m_newSocketFd, ss.str().c_str(), ss.str().size());
 
   if (bytesSent == ss.str().size()) {
-    log("Message sent");
+    log("Message sent successfully");
   } else {
     log("Message not sent");
   }
