@@ -124,18 +124,28 @@ void TcpServer::startListen() {
 
   struct sockaddr_storage incAddr;
   socklen_t incAddrsize = sizeof incAddr;
+
+  log("Waiting for new connection");
+
+  while (true) {
+    m_newSocketFd =
+        accept(m_socketFd, (struct sockaddr *)&incAddr, &incAddrsize);
+    handleClient();
+  }
+}
+
+void TcpServer::handleClient() {
   int bytesReceived;
   char buffer[BUFFER_SIZE];
 
   while (true) {
-    log("Waiting for new connection");
-    m_newSocketFd =
-        accept(m_socketFd, (struct sockaddr *)&incAddr, &incAddrsize);
-
     memset(buffer, 0, sizeof(buffer));
     bytesReceived = recv(m_newSocketFd, buffer, BUFFER_SIZE, 0);
     if (bytesReceived < 0) {
       exitWithFailure("Failed to receive data");
+    } else if (bytesReceived == 0) {
+      log("Client disconnected");
+      break;
     }
 
     auto request = parseHttpResquest(std::string(buffer));
@@ -144,8 +154,6 @@ void TcpServer::startListen() {
 
     const std::string responseBody = m_routesHanlder.getResponse();
     sendResponse(responseBody);
-
-    close(m_newSocketFd);
   }
 }
 

@@ -37,6 +37,7 @@ private:
   RoutesHandler m_routesHanlder;
 
   void closeServer();
+  void handleClient();
   void printListeningAddress();
   void exitWithFailure(const std::string &message);
   struct httpRequest parseHttpResquest(std::string request);

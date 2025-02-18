@@ -18,9 +18,10 @@ int Repository::fibonacci(int term) {
 
 void Repository::invertVector(std::vector<int> &numbers) {
   for (int i = 0; i < numbers.size() / 2; i++) {
-    numbers[i] += numbers[numbers.size() - 1];
-    numbers[numbers.size() - 1] = numbers[i] - numbers[numbers.size() - 1];
-    numbers[i] -= numbers[numbers.size() - 1];
+    numbers[i] += numbers[numbers.size() - i - 1];
+    numbers[numbers.size() - i - 1] =
+        numbers[i] - numbers[numbers.size() - i - 1];
+    numbers[i] -= numbers[numbers.size() - i - 1];
   }
 }
 
@@ -33,7 +34,7 @@ int Repository::repeatedInVector(std::vector<int> &numbers) {
     else
       count[num] = 1;
 
-    if (count[num] > maxAmount) { 
+    if (count[num] > maxAmount) {
       maxNum = num;
       maxAmount = count[num];
     }
